@@ -528,5 +528,11 @@ startScheduler(pool, async (s) => {
   return activeStreamId;
 });
 
-const PORT = Number(process.env.BACKEND_PORT)||3001;
-server.listen(PORT, ()=> console.log(`Backend listening on http://0.0.0.0:${PORT}`));
+const PORT = process.env.PORT || Number(process.env.BACKEND_PORT) || 3001;
+
+// Health check endpoint for Railway
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+server.listen(PORT, '0.0.0.0', ()=> console.log(`Backend listening on http://0.0.0.0:${PORT}`));
