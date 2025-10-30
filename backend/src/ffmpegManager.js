@@ -8,18 +8,10 @@ class FFmpegManager {
   }
   setIO(io){ this.io = io; }
 
-  startPerChannel(activeStreamId, userId, inputPaths, rtmpUrls, baseArgs){
+  startPerChannel(activeStreamId, userId, inputConfig, rtmpUrls, baseArgs){
     if (this.jobs.has(activeStreamId)) throw new Error('Job already exists');
-    const input = Array.isArray(inputPaths) ? this.createPlaylist(activeStreamId, inputPaths) : inputPaths;
     const procs = rtmpUrls.map((url, index) => {
-      const args = [
-        '-re','-f', Array.isArray(inputPaths) ? 'concat' : 'auto', '-safe', '0', '-i', input,
-        '-vcodec','libx264','-preset','veryfast',
-        '-b:v','800k','-maxrate','800k','-bufsize','1600k','-g','60',
-        '-r','30','-vsync','1',
-        '-acodec','aac','-ar','44100','-b:a','96k',
-        '-f','flv', url
-      ];
+      const args = this.buildFFmpegArgs(inputConfig, url);
       const p = spawn('ffmpeg', baseArgs ? baseArgs.concat(args) : args);
       p.stderr.on('data', d => this.handleFFmpegOutput(userId, activeStreamId, d.toString(), index));
       p.on('close', (c,s) => this.handleProcessClose(userId, activeStreamId, c, s, index));
@@ -40,18 +32,10 @@ class FFmpegManager {
     this.startHealthCheck(activeStreamId);
   }
 
-  startTee(activeStreamId, userId, inputPaths, rtmpUrls, baseArgs){
+  startTee(activeStreamId, userId, inputConfig, rtmpUrls, baseArgs){
     if (this.jobs.has(activeStreamId)) throw new Error('Job already exists');
-    const input = Array.isArray(inputPaths) ? this.createPlaylist(activeStreamId, inputPaths) : inputPaths;
     const teeTargets = rtmpUrls.map(u => `[f=flv]${u}`).join('|');
-    const args = [
-      '-re','-f', Array.isArray(inputPaths) ? 'concat' : 'auto', '-safe', '0', '-i', input,
-      '-vcodec','libx264','-preset','veryfast',
-      '-b:v','800k','-maxrate','800k','-bufsize','1600k','-g','60',
-      '-r','30','-vsync','1',
-      '-acodec','aac','-ar','44100','-b:a','96k',
-      '-f','tee', teeTargets
-    ];
+    const args = this.buildFFmpegArgs(inputConfig, null, teeTargets);
     const proc = spawn('ffmpeg', baseArgs ? baseArgs.concat(args) : args);
     proc.stderr.on('data', d => this.handleFFmpegOutput(userId, activeStreamId, d.toString()));
     proc.on('close', (c,s)=> this.handleProcessClose(userId, activeStreamId, c, s));
@@ -80,10 +64,71 @@ class FFmpegManager {
     return true;
   }
 
+  buildFFmpegArgs(inputConfig, rtmpUrl = null, teeTargets = null) {
+    const args = ['-re'];
+    
+    // Handle different input types
+    if (inputConfig.type === 'multi') {
+      // Multi-input: multiple video and audio files
+      const videoPlaylist = this.createMultiPlaylist(inputConfig.activeStreamId, inputConfig.videoPaths, 'video');
+      const audioPlaylist = this.createMultiPlaylist(inputConfig.activeStreamId, inputConfig.audioPaths, 'audio');
+      
+      args.push('-stream_loop', '-1', '-f', 'concat', '-safe', '0', '-i', videoPlaylist);
+      args.push('-f', 'concat', '-safe', '0', '-i', audioPlaylist);
+      args.push('-map', '0:v:0', '-map', '1:a:0');
+      args.push('-shortest'); // Stop when audio ends
+    } else if (inputConfig.type === 'playlist') {
+      // Playlist: multiple video files
+      const playlistPath = this.createPlaylist(inputConfig.activeStreamId, inputConfig.paths);
+      args.push('-f', 'concat', '-safe', '0', '-i', playlistPath);
+    } else {
+      // Single file
+      args.push('-i', inputConfig.path);
+    }
+    
+    // Video encoding settings
+    args.push(
+      '-vcodec', 'libx264', '-preset', 'veryfast',
+      '-b:v', '800k', '-maxrate', '800k', '-bufsize', '1600k',
+      '-g', '60', '-r', '30', '-vsync', '1'
+    );
+    
+    // Audio encoding settings
+    args.push('-acodec', 'aac', '-ar', '44100', '-b:a', '96k');
+    
+    // Output settings
+    if (teeTargets) {
+      args.push('-f', 'tee', teeTargets);
+    } else if (rtmpUrl) {
+      args.push('-f', 'flv', rtmpUrl);
+    }
+    
+    return args;
+  }
+  
   createPlaylist(activeStreamId, inputPaths) {
     const fs = require('fs');
     const path = require('path');
     const playlistPath = path.join(__dirname, '..', 'temp', `playlist_${activeStreamId}.txt`);
+    
+    // Ensure temp directory exists
+    const tempDir = path.dirname(playlistPath);
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    
+    // Create concat playlist file
+    const playlistContent = inputPaths.map(p => `file '${p.replace(/'/g, "'\\''")}'
+`).join('');
+    fs.writeFileSync(playlistPath, playlistContent);
+    
+    return playlistPath;
+  }
+  
+  createMultiPlaylist(activeStreamId, inputPaths, type) {
+    const fs = require('fs');
+    const path = require('path');
+    const playlistPath = path.join(__dirname, '..', 'temp', `${type}_playlist_${activeStreamId}.txt`);
     
     // Ensure temp directory exists
     const tempDir = path.dirname(playlistPath);

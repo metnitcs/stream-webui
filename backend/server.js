@@ -242,17 +242,69 @@ app.delete('/channels/:id', auth, async (req,res)=>{
 
 // stream start/stop
 app.post('/stream/start', auth, async (req,res)=>{
-  const { files, channelIds, mode } = req.body || {};
-  // Support both single file (backward compatibility) and multiple files
-  const fileList = Array.isArray(files) ? files : (files ? [files] : [req.body.file].filter(Boolean));
-  if (!fileList.length || !Array.isArray(channelIds) || channelIds.length===0) return res.status(400).send('files[] and channelIds[] required');
+  const { files, videoFiles, audioFiles, channelIds, mode, inputType } = req.body || {};
   
-  // Validate all files exist
-  const inputPaths = [];
-  for (const file of fileList) {
-    const inputPath = path.join(__dirname, 'uploads', `user_${req.userId}`, file);
-    if (!fs.existsSync(inputPath)) return res.status(404).send(`File not found: ${file}`);
-    inputPaths.push(inputPath);
+  if (!Array.isArray(channelIds) || channelIds.length===0) {
+    return res.status(400).send('channelIds[] required');
+  }
+  
+  // Build input configuration based on type
+  let inputConfig;
+  let fileList;
+  
+  if (inputType === 'multi' && videoFiles && audioFiles) {
+    // Multi-input mode: multiple video and audio files
+    const videoPaths = [];
+    const audioPaths = [];
+    
+    // Validate video files
+    for (const videoFile of videoFiles) {
+      const videoPath = path.join(__dirname, 'uploads', `user_${req.userId}`, videoFile);
+      if (!fs.existsSync(videoPath)) return res.status(404).send(`Video file not found: ${videoFile}`);
+      videoPaths.push(videoPath);
+    }
+    
+    // Validate audio files
+    for (const audioFile of audioFiles) {
+      const audioPath = path.join(__dirname, 'uploads', `user_${req.userId}`, audioFile);
+      if (!fs.existsSync(audioPath)) return res.status(404).send(`Audio file not found: ${audioFile}`);
+      audioPaths.push(audioPath);
+    }
+    
+    
+    inputConfig = {
+      type: 'multi',
+      videoPaths,
+      audioPaths,
+      activeStreamId: null
+    };
+    fileList = [...videoFiles, ...audioFiles];
+    
+  } else {
+    // Standard mode: single file or playlist
+    const fileArray = Array.isArray(files) ? files : (files ? [files] : [req.body.file].filter(Boolean));
+    if (!fileArray.length) return res.status(400).send('files[] required');
+    
+    const inputPaths = [];
+    for (const file of fileArray) {
+      const inputPath = path.join(__dirname, 'uploads', `user_${req.userId}`, file);
+      if (!fs.existsSync(inputPath)) return res.status(404).send(`File not found: ${file}`);
+      inputPaths.push(inputPath);
+    }
+    
+    if (fileArray.length > 1) {
+      inputConfig = {
+        type: 'playlist',
+        paths: inputPaths,
+        activeStreamId: null // Will be set later
+      };
+    } else {
+      inputConfig = {
+        type: 'single',
+        path: inputPaths[0]
+      };
+    }
+    fileList = fileArray;
   }
   
   const { rows: chans } = await pool.query(
@@ -261,17 +313,30 @@ app.post('/stream/start', auth, async (req,res)=>{
   if (!chans.length) return res.status(400).send('No valid channels');
   const rtmpUrls = chans.map(c => `${c.rtmp_url}/${decrypt(c.stream_key_encrypted)}`);
   const runMode = (mode==='tee') ? 'tee' : 'per_channel';
+  
+  // Store input configuration in database
+  const inputData = {
+    type: inputConfig.type,
+    files: fileList
+  };
+  
   const { rows: act } = await pool.query(
     'INSERT INTO active_streams (user_id, mode, input_file, channel_ids) VALUES ($1,$2,$3,$4) RETURNING id',
-    [req.userId, runMode, JSON.stringify(fileList), channelIds]
+    [req.userId, runMode, JSON.stringify(inputData), channelIds]
   );
   const activeStreamId = act[0].id;
+  
+  // Set activeStreamId for playlist
+  if (inputConfig.type === 'playlist') {
+    inputConfig.activeStreamId = activeStreamId;
+  }
+  
   try{
     if (runMode==='tee'){
-      const pid = ff.startTee(activeStreamId, req.userId, inputPaths, rtmpUrls);
+      const pid = ff.startTee(activeStreamId, req.userId, inputConfig, rtmpUrls);
       await pool.query('UPDATE active_streams SET pid=$1 WHERE id=$2',[pid, activeStreamId]);
     } else {
-      ff.startPerChannel(activeStreamId, req.userId, inputPaths, rtmpUrls);
+      ff.startPerChannel(activeStreamId, req.userId, inputConfig, rtmpUrls);
     }
   }catch(e){
     await pool.query('DELETE FROM active_streams WHERE id=$1',[activeStreamId]);
@@ -334,21 +399,47 @@ app.get('/schedules', auth, async (req,res)=>{
 });
 
 app.post('/schedules', auth, async (req,res)=>{
-  const { files, channelIds, mode, startAt } = req.body || {};
-  // Support both single file (backward compatibility) and multiple files
-  const fileList = Array.isArray(files) ? files : (files ? [files] : [req.body.file].filter(Boolean));
-  if (!fileList.length || !Array.isArray(channelIds) || !startAt) return res.status(400).send('files[], channelIds[], startAt required');
+  const { files, videoFile, audioFile, channelIds, mode, startAt, inputType } = req.body || {};
   
-  // Validate all files exist
-  for (const file of fileList) {
-    const inputPath = path.join(__dirname, 'uploads', `user_${req.userId}`, file);
-    if (!fs.existsSync(inputPath)) return res.status(404).send(`File not found: ${file}`);
+  if (!Array.isArray(channelIds) || !startAt) {
+    return res.status(400).send('channelIds[], startAt required');
+  }
+  
+  let inputData;
+  
+  if (inputType === 'multi' && videoFile && audioFile) {
+    // Multi-input validation
+    const videoPath = path.join(__dirname, 'uploads', `user_${req.userId}`, videoFile);
+    const audioPath = path.join(__dirname, 'uploads', `user_${req.userId}`, audioFile);
+    
+    if (!fs.existsSync(videoPath)) return res.status(404).send(`Video file not found: ${videoFile}`);
+    if (!fs.existsSync(audioPath)) return res.status(404).send(`Audio file not found: ${audioFile}`);
+    
+    inputData = {
+      type: 'multi',
+      videoFile,
+      audioFile
+    };
+  } else {
+    // Standard validation
+    const fileList = Array.isArray(files) ? files : (files ? [files] : [req.body.file].filter(Boolean));
+    if (!fileList.length) return res.status(400).send('files[] required');
+    
+    for (const file of fileList) {
+      const inputPath = path.join(__dirname, 'uploads', `user_${req.userId}`, file);
+      if (!fs.existsSync(inputPath)) return res.status(404).send(`File not found: ${file}`);
+    }
+    
+    inputData = {
+      type: fileList.length > 1 ? 'playlist' : 'single',
+      files: fileList
+    };
   }
   
   const runMode = (mode==='tee') ? 'tee' : 'per_channel';
   const { rows } = await pool.query(
     'INSERT INTO schedules (user_id,input_file,channel_ids,mode,start_at) VALUES ($1,$2,$3,$4,$5) RETURNING *',
-    [req.userId, JSON.stringify(fileList), channelIds, runMode, startAt]
+    [req.userId, JSON.stringify(inputData), channelIds, runMode, startAt]
   );
   res.json(rows[0]);
 });
@@ -371,12 +462,42 @@ startScheduler(pool, async (s) => {
   if (!chans.length) throw new Error('no channels');
   const rtmpUrls = chans.map(c => `${c.rtmp_url}/${decrypt(c.stream_key_encrypted)}`);
   
-  // Parse input_file - could be single file path or JSON array
-  let inputPaths;
+  // Parse input configuration
+  let inputConfig;
   try {
-    inputPaths = JSON.parse(s.input_file).map(file => path.join(__dirname, 'uploads', `user_${s.user_id}`, file));
+    const inputData = JSON.parse(s.input_file);
+    
+    if (inputData.type === 'multi') {
+      // Multi-input: separate video and audio
+      inputConfig = {
+        type: 'multi',
+        videoPath: path.join(__dirname, 'uploads', `user_${s.user_id}`, inputData.videoFile),
+        audioPath: path.join(__dirname, 'uploads', `user_${s.user_id}`, inputData.audioFile)
+      };
+    } else if (inputData.type === 'playlist') {
+      // Playlist
+      const inputPaths = inputData.files.map(file => path.join(__dirname, 'uploads', `user_${s.user_id}`, file));
+      inputConfig = {
+        type: 'playlist',
+        paths: inputPaths,
+        activeStreamId: null // Will be set later
+      };
+    } else {
+      // Single file
+      inputConfig = {
+        type: 'single',
+        path: path.join(__dirname, 'uploads', `user_${s.user_id}`, inputData.files[0])
+      };
+    }
   } catch {
-    inputPaths = s.input_file; // backward compatibility - single file path
+    // Backward compatibility - old format
+    const files = Array.isArray(s.input_file) ? s.input_file : JSON.parse(s.input_file);
+    const inputPaths = files.map(file => path.join(__dirname, 'uploads', `user_${s.user_id}`, file));
+    inputConfig = {
+      type: files.length > 1 ? 'playlist' : 'single',
+      paths: inputPaths.length > 1 ? inputPaths : undefined,
+      path: inputPaths.length === 1 ? inputPaths[0] : undefined
+    };
   }
   
   const { rows: act } = await pool.query(
@@ -384,11 +505,17 @@ startScheduler(pool, async (s) => {
     [s.user_id, s.mode, s.input_file, s.channel_ids]
   );
   const activeStreamId = act[0].id;
+  
+  // Set activeStreamId for playlist
+  if (inputConfig.type === 'playlist') {
+    inputConfig.activeStreamId = activeStreamId;
+  }
+  
   if (s.mode==='tee') {
-    const pid = ff.startTee(activeStreamId, s.user_id, inputPaths, rtmpUrls);
+    const pid = ff.startTee(activeStreamId, s.user_id, inputConfig, rtmpUrls);
     await pool.query('UPDATE active_streams SET pid=$1 WHERE id=$2',[pid, activeStreamId]);
   } else {
-    ff.startPerChannel(activeStreamId, s.user_id, inputPaths, rtmpUrls);
+    ff.startPerChannel(activeStreamId, s.user_id, inputConfig, rtmpUrls);
   }
   return activeStreamId;
 });
