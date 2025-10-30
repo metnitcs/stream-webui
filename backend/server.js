@@ -11,6 +11,7 @@ const { Pool } = require('pg');
 const { encrypt, decrypt } = require('./src/crypto');
 const FFmpegManager = require('./src/ffmpegManager');
 const { startScheduler } = require('./src/scheduler');
+const { initializeDatabase } = require('./src/initDb');
 
 const app = express();
 const server = http.createServer(app);
@@ -535,4 +536,10 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-server.listen(PORT, '0.0.0.0', ()=> console.log(`Backend listening on http://0.0.0.0:${PORT}`));
+// Initialize database tables on startup
+initializeDatabase().then(() => {
+  server.listen(PORT, '0.0.0.0', ()=> console.log(`Backend listening on http://0.0.0.0:${PORT}`));
+}).catch(error => {
+  console.error('Failed to start server:', error);
+  process.exit(1);
+});
