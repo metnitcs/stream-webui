@@ -14,11 +14,35 @@
         Create Schedule
       </h3>
       
+      <!-- Input Mode Selection -->
+      <div class="input-mode-section">
+        <label class="section-label">
+          <SettingsIcon class="label-icon" />
+          Input Mode
+        </label>
+        <div class="input-mode-tabs">
+          <button 
+            :class="['mode-tab', { active: inputMode === 'standard' }]" 
+            @click="inputMode = 'standard'; resetSelections()"
+          >
+            <VideoIcon class="tab-icon" />
+            Standard
+          </button>
+          <button 
+            :class="['mode-tab', { active: inputMode === 'multi' }]" 
+            @click="inputMode = 'multi'; resetSelections()"
+          >
+            <SplitIcon class="tab-icon" />
+            Multi-Input
+          </button>
+        </div>
+      </div>
+      
       <!-- File Selection -->
       <div class="file-section">
         <label class="section-label">
           <FolderIcon class="label-icon" />
-          Video Files
+          {{ inputMode === 'multi' ? 'Select Files' : 'Video Files' }}
         </label>
         <div v-if="uploadedFiles.length === 0" class="empty-files">
           <FolderIcon class="empty-icon" />
@@ -26,34 +50,94 @@
           <p class="empty-subtitle">Upload files first to schedule streams</p>
         </div>
         <div v-else>
-          <div class="playlist-controls">
-            <label class="playlist-label">
-              <ListIcon class="label-icon" />
-              Selected Files ({{ selectedFiles.length }})
-            </label>
-            <div class="playlist-actions">
-              <button @click="selectAllFiles" class="playlist-btn">
-                <CheckSquareIcon class="btn-icon" />
-                Select All
-              </button>
-              <button @click="clearSelection" class="playlist-btn">
-                <XSquareIcon class="btn-icon" />
-                Clear All
-              </button>
+          <!-- Multi-Input Mode -->
+          <div v-if="inputMode === 'multi'" class="multi-input-section">
+            <div class="multi-input-controls">
+              <label class="multi-label">
+                <VideoIcon class="label-icon" />
+                Video Sources ({{ selectedVideoFiles.length }} selected)
+              </label>
+              <label class="multi-label">
+                <VolumeXIcon class="label-icon" />
+                Audio Sources ({{ selectedAudioFiles.length }} selected)
+              </label>
+              <div class="multi-actions">
+                <button @click="clearVideoSelection" class="clear-btn">
+                  <XIcon class="clear-icon" />
+                  Clear Videos
+                </button>
+                <button @click="clearAudioSelection" class="clear-btn">
+                  <XIcon class="clear-icon" />
+                  Clear Audios
+                </button>
+              </div>
+            </div>
+            <div class="files-grid multi-grid">
+              <label v-for="uploadedFile in uploadedFiles" :key="uploadedFile.filename" class="file-option multi-option">
+                <div class="file-card multi-card">
+                  <VideoIcon class="file-icon" />
+                  <div class="file-info">
+                    <span class="file-title">{{ uploadedFile.originalName || uploadedFile.filename }}</span>
+                    <span class="file-meta">{{ formatFileSize(uploadedFile.size) }}</span>
+                  </div>
+                  <div class="multi-selectors">
+                    <button 
+                      @click="toggleVideoSelection(uploadedFile.filename)" 
+                      :class="['selector-btn', 'video-btn', { active: selectedVideoFiles.includes(uploadedFile.filename) }]"
+                      :title="selectedVideoFiles.includes(uploadedFile.filename) ? 'Remove from Videos' : 'Add to Videos'"
+                    >
+                      <VideoIcon class="selector-icon" />
+                      <span v-if="selectedVideoFiles.includes(uploadedFile.filename)" class="selection-number">
+                        {{ selectedVideoFiles.indexOf(uploadedFile.filename) + 1 }}
+                      </span>
+                    </button>
+                    <button 
+                      @click="toggleAudioSelection(uploadedFile.filename)" 
+                      :class="['selector-btn', 'audio-btn', { active: selectedAudioFiles.includes(uploadedFile.filename) }]"
+                      :title="selectedAudioFiles.includes(uploadedFile.filename) ? 'Remove from Audios' : 'Add to Audios'"
+                    >
+                      <VolumeXIcon class="selector-icon" />
+                      <span v-if="selectedAudioFiles.includes(uploadedFile.filename)" class="selection-number">
+                        {{ selectedAudioFiles.indexOf(uploadedFile.filename) + 1 }}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </label>
             </div>
           </div>
-          <div class="files-grid">
-            <label v-for="uploadedFile in uploadedFiles" :key="uploadedFile.filename" class="file-option">
-              <input type="checkbox" :value="uploadedFile.filename" v-model="selectedFiles" class="checkbox-input" />
-              <div class="file-card">
-                <VideoIcon class="file-icon" />
-                <div class="file-info">
-                  <span class="file-title">{{ uploadedFile.originalName || uploadedFile.filename }}</span>
-                  <span class="file-meta">{{ formatFileSize(uploadedFile.size) }}</span>
-                </div>
-                <span class="checkbox-check">✓</span>
+          
+          <!-- Standard Mode -->
+          <div v-else class="standard-input-section">
+            <div class="playlist-controls">
+              <label class="playlist-label">
+                <ListIcon class="label-icon" />
+                Selected Files ({{ selectedFiles.length }})
+              </label>
+              <div class="playlist-actions">
+                <button @click="selectAllFiles" class="playlist-btn">
+                  <CheckSquareIcon class="btn-icon" />
+                  Select All
+                </button>
+                <button @click="clearSelection" class="playlist-btn">
+                  <XSquareIcon class="btn-icon" />
+                  Clear All
+                </button>
               </div>
-            </label>
+            </div>
+            <div class="files-grid">
+              <label v-for="uploadedFile in uploadedFiles" :key="uploadedFile.filename" class="file-option">
+                <input type="checkbox" :value="uploadedFile.filename" v-model="selectedFiles" class="checkbox-input" />
+                <div class="file-card">
+                  <VideoIcon class="file-icon" />
+                  <div class="file-info">
+                    <span class="file-title">{{ uploadedFile.originalName || uploadedFile.filename }}</span>
+                    <span class="file-meta">{{ formatFileSize(uploadedFile.size) }}</span>
+                  </div>
+                  <span class="checkbox-check">✓</span>
+                </div>
+              </label>
+            </div>
           </div>
         </div>
       </div>
@@ -254,12 +338,15 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, Teleport } from 'vue'
-import { CalendarIcon, ClockIcon, FolderIcon, ListIcon, CheckSquareIcon, XSquareIcon, VideoIcon, TvIcon, SettingsIcon, RefreshCwIcon, ZapIcon, CalendarPlusIcon, StopCircleIcon, EditIcon, TrashIcon, XIcon } from 'lucide-vue-next'
+import { CalendarIcon, ClockIcon, FolderIcon, ListIcon, CheckSquareIcon, XSquareIcon, VideoIcon, TvIcon, SettingsIcon, RefreshCwIcon, ZapIcon, CalendarPlusIcon, StopCircleIcon, EditIcon, TrashIcon, XIcon, SplitIcon, VolumeXIcon } from 'lucide-vue-next'
 import { store } from '../main'
 
 const backend = __BACKEND__
 const uploadedFiles = ref([])
 const selectedFiles = ref([])
+const selectedVideoFiles = ref([])
+const selectedAudioFiles = ref([])
+const inputMode = ref('standard')
 const channels = ref([])
 const selectedChannels = ref([])
 const mode = ref('per_channel')
@@ -274,9 +361,11 @@ const stopConfirm = ref(null)
 let refreshInterval = null
 
 const canSchedule = computed(() => {
-  return selectedFiles.value.length > 0 && 
-         selectedChannels.value.length > 0 && 
-         scheduleTime.value
+  const hasFiles = inputMode.value === 'multi' 
+    ? (selectedVideoFiles.value.length > 0 && selectedAudioFiles.value.length > 0)
+    : selectedFiles.value.length > 0
+  
+  return hasFiles && selectedChannels.value.length > 0 && scheduleTime.value
 })
 
 async function fetchUploadedFiles() {
@@ -314,6 +403,38 @@ function selectAllFiles() {
 
 function clearSelection() {
   selectedFiles.value = []
+}
+
+function resetSelections() {
+  selectedFiles.value = []
+  selectedVideoFiles.value = []
+  selectedAudioFiles.value = []
+}
+
+function toggleVideoSelection(filename) {
+  const index = selectedVideoFiles.value.indexOf(filename)
+  if (index > -1) {
+    selectedVideoFiles.value.splice(index, 1)
+  } else {
+    selectedVideoFiles.value.push(filename)
+  }
+}
+
+function toggleAudioSelection(filename) {
+  const index = selectedAudioFiles.value.indexOf(filename)
+  if (index > -1) {
+    selectedAudioFiles.value.splice(index, 1)
+  } else {
+    selectedAudioFiles.value.push(filename)
+  }
+}
+
+function clearVideoSelection() {
+  selectedVideoFiles.value = []
+}
+
+function clearAudioSelection() {
+  selectedAudioFiles.value = []
 }
 
 function formatFileSize(bytes) {
@@ -359,7 +480,14 @@ async function createSchedule() {
         Authorization: `Bearer ${store.token}` 
       },
       body: JSON.stringify({
-        files: selectedFiles.value,
+        ...(inputMode.value === 'multi' ? {
+          videoFiles: selectedVideoFiles.value,
+          audioFiles: selectedAudioFiles.value,
+          inputType: 'multi'
+        } : {
+          files: selectedFiles.value,
+          inputType: 'standard'
+        }),
         channelIds: selectedChannels.value,
         mode: mode.value,
         startAt: new Date(scheduleTime.value).toISOString()
@@ -373,7 +501,7 @@ async function createSchedule() {
       setTimeout(() => { status.value = '' }, 5000)
       
       // Reset form
-      selectedFiles.value = []
+      resetSelections()
       selectedChannels.value = []
       scheduleTime.value = ''
       
@@ -438,10 +566,23 @@ async function performStop(scheduleId) {
 function editSchedule(schedule) {
   // Populate form with schedule data
   try {
-    const files = JSON.parse(schedule.input_file)
-    selectedFiles.value = files
+    const inputData = JSON.parse(schedule.input_file)
+    if (inputData.type === 'multi') {
+      inputMode.value = 'multi'
+      selectedVideoFiles.value = inputData.videoFiles || []
+      selectedAudioFiles.value = inputData.audioFiles || []
+      selectedFiles.value = []
+    } else {
+      inputMode.value = 'standard'
+      selectedFiles.value = inputData.files || [inputData]
+      selectedVideoFiles.value = []
+      selectedAudioFiles.value = []
+    }
   } catch {
+    inputMode.value = 'standard'
     selectedFiles.value = [schedule.input_file]
+    selectedVideoFiles.value = []
+    selectedAudioFiles.value = []
   }
   selectedChannels.value = schedule.channel_ids
   mode.value = schedule.mode
@@ -1309,6 +1450,184 @@ onUnmounted(() => {
   color: #c53030;
 }
 
+.input-mode-section {
+  margin-bottom: 2rem;
+}
+
+.input-mode-tabs {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: #f7fafc;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.mode-tab {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 500;
+  color: #4a5568;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.mode-tab.active {
+  background: white;
+  color: #667eea;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.tab-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.multi-input-section {
+  margin-top: 1rem;
+}
+
+.multi-input-controls {
+  display: flex;
+  gap: 2rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: #f0f4ff;
+  border-radius: 12px;
+  border: 2px solid #667eea;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.multi-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: #667eea;
+}
+
+.multi-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.clear-btn {
+  padding: 0.5rem 1rem;
+  border: 1px solid #e2e8f0;
+  background: white;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.9rem;
+  color: #718096;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.clear-btn:hover {
+  border-color: #f56565;
+  background: #fed7d7;
+  color: #c53030;
+}
+
+.clear-icon {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.multi-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.multi-option {
+  cursor: default;
+}
+
+.multi-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: white;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.multi-card:hover {
+  border-color: #cbd5e0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.multi-selectors {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.selector-btn {
+  position: relative;
+  padding: 0.5rem;
+  border: 2px solid #e2e8f0;
+  background: white;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.selector-btn:hover {
+  transform: translateY(-1px);
+}
+
+.video-btn.active {
+  border-color: #667eea;
+  background: #f0f4ff;
+  color: #667eea;
+}
+
+.audio-btn.active {
+  border-color: #38a169;
+  background: #f0fff4;
+  color: #38a169;
+}
+
+.selector-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.selection-number {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #667eea;
+  color: white;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  font-size: 0.7rem;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.standard-input-section {
+  margin-top: 1rem;
+}
+
 @media (max-width: 768px) {
   .mode-options {
     grid-template-columns: 1fr;
@@ -1326,6 +1645,15 @@ onUnmounted(() => {
   .schedule-meta {
     flex-direction: column;
     gap: 0.5rem;
+  }
+  
+  .multi-input-controls {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .multi-selectors {
+    flex-direction: column;
   }
 }
 </style>

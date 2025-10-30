@@ -21,16 +21,26 @@
       </div>
       
       <div v-else class="multi-file-section">
-        <div class="multi-upload">
-          <div>
-            <label>Video File:</label>
-            <input type="file" @change="onVideoFile" accept="video/*" />
-            <span v-if="videoFileName">{{ videoFileName }}</span>
+        <div class="multi-selection">
+          <div class="selection-summary">
+            <div class="summary-item">
+              <span class="summary-label">Video Files:</span>
+              <span class="summary-count">{{ selectedVideoFiles.length }} selected</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-label">Audio Files:</span>
+              <span class="summary-count">{{ selectedAudioFiles.length }} selected</span>
+            </div>
           </div>
-          <div>
-            <label>Audio File:</label>
-            <input type="file" @change="onAudioFile" accept="audio/*" />
-            <span v-if="audioFileName">{{ audioFileName }}</span>
+          <div class="multi-upload">
+            <div>
+              <label>Upload Video Files:</label>
+              <input type="file" @change="onVideoFiles" accept="video/*" multiple />
+            </div>
+            <div>
+              <label>Upload Audio Files:</label>
+              <input type="file" @change="onAudioFiles" accept="audio/*" multiple />
+            </div>
           </div>
         </div>
       </div>
@@ -74,8 +84,8 @@ const selected = ref([])
 const status = ref('')
 const file = ref(null)
 const uploadedFiles = ref([])
-const videoFileName = ref('')
-const audioFileName = ref('')
+const selectedVideoFiles = ref([])
+const selectedAudioFiles = ref([])
 const inputType = ref('standard')
 const mode = ref('per_channel')
 const startAt = ref('')
@@ -85,7 +95,7 @@ const canCreateSchedule = computed(() => {
   if (selected.value.length === 0 || !startAt.value) return false
   
   if (inputType.value === 'multi') {
-    return videoFileName.value && audioFileName.value
+    return selectedVideoFiles.value.length > 0 && selectedAudioFiles.value.length > 0
   } else {
     return uploadedFiles.value.length > 0
   }
@@ -102,18 +112,21 @@ function onFile(e){
   file.value = Array.from(e.target.files)
 }
 
-function onVideoFile(e) {
-  if (e.target.files[0]) {
-    file.value = [e.target.files[0]]
-    videoFileName.value = e.target.files[0].name
+function onVideoFiles(e) {
+  if (e.target.files.length > 0) {
+    const videoFiles = Array.from(e.target.files)
+    if (!file.value) file.value = []
+    file.value.push(...videoFiles)
+    selectedVideoFiles.value = videoFiles.map(f => f.name)
   }
 }
 
-function onAudioFile(e) {
-  if (e.target.files[0]) {
+function onAudioFiles(e) {
+  if (e.target.files.length > 0) {
+    const audioFiles = Array.from(e.target.files)
     if (!file.value) file.value = []
-    file.value.push(e.target.files[0])
-    audioFileName.value = e.target.files[0].name
+    file.value.push(...audioFiles)
+    selectedAudioFiles.value = audioFiles.map(f => f.name)
   }
 }
 async function uploadFiles(){
@@ -155,8 +168,9 @@ async function createSchedule(){
   }
   
   if (inputType.value === 'multi') {
-    requestBody.videoFile = uploadedFiles.value[0]
-    requestBody.audioFile = uploadedFiles.value[1]
+    const videoCount = selectedVideoFiles.value.length
+    requestBody.videoFiles = uploadedFiles.value.slice(0, videoCount)
+    requestBody.audioFiles = uploadedFiles.value.slice(videoCount)
     requestBody.inputType = 'multi'
   } else {
     requestBody.files = uploadedFiles.value
@@ -179,8 +193,8 @@ async function createSchedule(){
   
   // Reset form
   uploadedFiles.value = []
-  videoFileName.value = ''
-  audioFileName.value = ''
+  selectedVideoFiles.value = []
+  selectedAudioFiles.value = []
   file.value = null
 }
 onMounted(()=>{ fetchChannels(); fetchSchedules(); })
@@ -259,5 +273,37 @@ th, td { border: 1px solid #ddd; padding: .5rem; text-align: left; }
   margin: 0;
   color: #2f855a;
   font-weight: 500;
+}
+
+.multi-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.selection-summary {
+  display: flex;
+  gap: 2rem;
+  padding: 1rem;
+  background: #f0f4ff;
+  border-radius: 8px;
+  border: 2px solid #667eea;
+}
+
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.summary-label {
+  font-weight: 600;
+  color: #667eea;
+  font-size: 0.9rem;
+}
+
+.summary-count {
+  font-weight: 500;
+  color: #4a5568;
 }
 </style>

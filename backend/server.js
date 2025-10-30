@@ -399,7 +399,7 @@ app.get('/schedules', auth, async (req,res)=>{
 });
 
 app.post('/schedules', auth, async (req,res)=>{
-  const { files, videoFile, audioFile, channelIds, mode, startAt, inputType } = req.body || {};
+  const { files, videoFiles, audioFiles, channelIds, mode, startAt, inputType } = req.body || {};
   
   if (!Array.isArray(channelIds) || !startAt) {
     return res.status(400).send('channelIds[], startAt required');
@@ -407,18 +407,22 @@ app.post('/schedules', auth, async (req,res)=>{
   
   let inputData;
   
-  if (inputType === 'multi' && videoFile && audioFile) {
+  if (inputType === 'multi' && videoFiles && audioFiles) {
     // Multi-input validation
-    const videoPath = path.join(__dirname, 'uploads', `user_${req.userId}`, videoFile);
-    const audioPath = path.join(__dirname, 'uploads', `user_${req.userId}`, audioFile);
+    for (const videoFile of videoFiles) {
+      const videoPath = path.join(__dirname, 'uploads', `user_${req.userId}`, videoFile);
+      if (!fs.existsSync(videoPath)) return res.status(404).send(`Video file not found: ${videoFile}`);
+    }
     
-    if (!fs.existsSync(videoPath)) return res.status(404).send(`Video file not found: ${videoFile}`);
-    if (!fs.existsSync(audioPath)) return res.status(404).send(`Audio file not found: ${audioFile}`);
+    for (const audioFile of audioFiles) {
+      const audioPath = path.join(__dirname, 'uploads', `user_${req.userId}`, audioFile);
+      if (!fs.existsSync(audioPath)) return res.status(404).send(`Audio file not found: ${audioFile}`);
+    }
     
     inputData = {
       type: 'multi',
-      videoFile,
-      audioFile
+      videoFiles,
+      audioFiles
     };
   } else {
     // Standard validation
@@ -468,11 +472,15 @@ startScheduler(pool, async (s) => {
     const inputData = JSON.parse(s.input_file);
     
     if (inputData.type === 'multi') {
-      // Multi-input: separate video and audio
+      // Multi-input: multiple video and audio files
+      const videoPaths = inputData.videoFiles.map(file => path.join(__dirname, 'uploads', `user_${s.user_id}`, file));
+      const audioPaths = inputData.audioFiles.map(file => path.join(__dirname, 'uploads', `user_${s.user_id}`, file));
+      
       inputConfig = {
         type: 'multi',
-        videoPath: path.join(__dirname, 'uploads', `user_${s.user_id}`, inputData.videoFile),
-        audioPath: path.join(__dirname, 'uploads', `user_${s.user_id}`, inputData.audioFile)
+        videoPaths,
+        audioPaths,
+        activeStreamId: null
       };
     } else if (inputData.type === 'playlist') {
       // Playlist
