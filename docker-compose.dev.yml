@@ -1,16 +1,5 @@
 version: "3.9"
 services:
-  db:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - db_data:/var/lib/postgresql/data
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    ports:
-      - ${DOCKER_PGSQL_PORT}:5432
   backend:
     build: ./backend
     environment:
@@ -31,21 +20,34 @@ services:
     depends_on:
       - db
     command: sh -c "npm install && npx nodemon server.js"
+    
   frontend:
-    build:
-      context: ./frontend
-      args:
-        VITE_BACKEND_URL: ${VITE_BACKEND_URL}
+    image: node:20-bullseye
+    working_dir: /app
     environment:
       VITE_BACKEND_URL: ${VITE_BACKEND_URL}
     volumes:
       - ./frontend:/app
-      - /app/node_modules
+      - frontend_node_modules:/app/node_modules
     ports:
       - "8080:5173"
     depends_on:
       - backend
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - ${DOCKER_PGSQL_PORT}:5432
+
 volumes:
   db_data:
   backend_uploads:
+  frontend_node_modules:

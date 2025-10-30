@@ -9,6 +9,7 @@
     "preview": "vite preview --port 5173"
   },
   "dependencies": {
+    "lucide-vue-next": "^0.294.0",
     "socket.io-client": "^4.7.5",
     "vue": "^3.4.21"
   },
