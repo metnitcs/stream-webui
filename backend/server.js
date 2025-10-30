@@ -297,7 +297,34 @@ app.post('/stream/stop', auth, async (req,res)=>{
 // get active streams
 app.get('/active-streams', auth, async (req,res)=>{
   const { rows } = await pool.query('SELECT id,mode,input_file,channel_ids,started_at FROM active_streams WHERE user_id=$1 AND stopped_at IS NULL ORDER BY id DESC',[req.userId]);
-  res.json(rows);
+  
+  // Add health status from FFmpegManager
+  const streamsWithHealth = rows.map(stream => {
+    const health = ff.getJobStatus(stream.id);
+    return {
+      ...stream,
+      health: health || { status: 'unknown', uptime: 0, errors: [], channels: 0 }
+    };
+  });
+  
+  res.json(streamsWithHealth);
+});
+
+// get stream health status
+app.get('/stream-health/:id', auth, async (req,res)=>{
+  const streamId = Number(req.params.id);
+  const { rows } = await pool.query('SELECT user_id FROM active_streams WHERE id=$1', [streamId]);
+  
+  if (!rows[0] || rows[0].user_id !== req.userId) {
+    return res.status(404).send('Stream not found');
+  }
+  
+  const health = ff.getJobStatus(streamId);
+  if (!health) {
+    return res.status(404).send('Stream not active');
+  }
+  
+  res.json(health);
 });
 
 // schedules

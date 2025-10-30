@@ -184,6 +184,14 @@
             <div class="active-info">
               <h4 class="active-title">Stream Active</h4>
               <p class="active-details">Streaming to {{ selected.length || 'selected' }} channels</p>
+              <div v-if="streamHealth" class="health-info">
+                <span :class="['health-status', streamHealth.status]">
+                  {{ streamHealth.status.toUpperCase() }}
+                </span>
+                <span class="uptime">
+                  Uptime: {{ formatUptime(streamHealth.uptime) }}
+                </span>
+              </div>
             </div>
             <div class="active-actions">
               <button @click="stop" class="btn-stop-inline">
@@ -196,6 +204,20 @@
         <div v-else-if="status" :class="['status-message', statusType]">
           <span class="status-icon">{{ statusIcon }}</span>
           <span>{{ status }}</span>
+        </div>
+      </div>
+      
+      <!-- Stream Errors -->
+      <div v-if="streamErrors.length > 0" class="errors-section">
+        <h4 class="errors-title">
+          <AlertTriangleIcon class="errors-icon" />
+          Recent Issues ({{ streamErrors.length }})
+        </h4>
+        <div class="errors-list">
+          <div v-for="error in streamErrors.slice(0, 5)" :key="error.time" class="error-item">
+            <span class="error-time">{{ error.time }}</span>
+            <span class="error-message">{{ error.message }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -243,7 +265,7 @@
 </template>
 <script setup>
 import { ref, computed, watch, onMounted, Teleport } from 'vue'
-import { PlayIcon, VideoIcon, FolderIcon, UploadIcon, FolderOpenIcon, DownloadIcon, TrashIcon, TvIcon, SettingsIcon, RefreshCwIcon, ZapIcon, StopCircleIcon, TerminalIcon, XIcon, ListIcon, CheckSquareIcon, XSquareIcon } from 'lucide-vue-next'
+import { PlayIcon, VideoIcon, FolderIcon, UploadIcon, FolderOpenIcon, DownloadIcon, TrashIcon, TvIcon, SettingsIcon, RefreshCwIcon, ZapIcon, StopCircleIcon, TerminalIcon, XIcon, ListIcon, CheckSquareIcon, XSquareIcon, AlertTriangleIcon } from 'lucide-vue-next'
 import { io } from 'socket.io-client'
 import { store } from '../main'
 const backend = __BACKEND__
@@ -264,6 +286,8 @@ const uploading = ref(false)
 const deleteConfirm = ref(null)
 const statusType = ref('')
 const statusIcon = ref('')
+const streamHealth = ref(null)
+const streamErrors = ref([])
 let socket
 async function fetchChannels(){
   const res = await fetch(`${backend}/channels`, { headers: { Authorization:`Bearer ${store.token}` } })
@@ -495,6 +519,20 @@ function clearSelection() {
 function clearLog(){
   log.value = ''
 }
+
+function formatUptime(ms) {
+  const seconds = Math.floor(ms / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  
+  if (hours > 0) {
+    return `${hours}h ${minutes % 60}m`
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds % 60}s`
+  } else {
+    return `${seconds}s`
+  }
+}
 function connectSocket(){
   if (socket) return
   socket = io(backend, { transports:['websocket'] })
@@ -510,13 +548,56 @@ function connectSocket(){
       if (log.value.length > 20000) log.value = log.value.slice(-20000)
     }
   })
+  
+  socket.on('stream_status', (m) => {
+    if (store.activeStreamId && m.jobId === store.activeStreamId) {
+      status.value = m.message
+      
+      if (m.status === 'streaming') {
+        statusType.value = 'success'
+        statusIcon.value = '🟢'
+      } else if (m.status === 'error' || m.status === 'failed') {
+        statusType.value = 'error'
+        statusIcon.value = '🔴'
+        streamErrors.value.unshift({
+          time: new Date(m.timestamp).toLocaleTimeString(),
+          message: m.message
+        })
+        if (streamErrors.value.length > 10) streamErrors.value.pop()
+      } else if (m.status === 'timeout') {
+        statusType.value = 'error'
+        statusIcon.value = '⏰'
+      }
+      
+      setTimeout(() => { 
+        if (status.value === m.message) status.value = '' 
+      }, 8000)
+    }
+  })
+  
+  socket.on('stream_health', (m) => {
+    if (store.activeStreamId && m.jobId === store.activeStreamId) {
+      streamHealth.value = m.health
+    }
+  })
 }
 // Watch for channel updates from other components
 watch(() => store.channelsUpdated, () => {
   fetchChannels()
 })
 
-onMounted(()=>{ fetchChannels(); fetchUploadedFiles(); checkActiveStreams(); if (store.token) connectSocket() })
+onMounted(()=>{ 
+  fetchChannels(); 
+  fetchUploadedFiles(); 
+  checkActiveStreams(); 
+  if (store.token) connectSocket()
+  
+  // Clear health data when component unmounts
+  return () => {
+    streamHealth.value = null
+    streamErrors.value = []
+  }
+})
 </script>
 <style scoped>
 .stream-controller {
@@ -1364,6 +1445,96 @@ onMounted(()=>{ fetchChannels(); fetchUploadedFiles(); checkActiveStreams(); if 
   background: rgba(255,255,255,0.2);
 }
 
+.health-info {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.health-status {
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.health-status.streaming {
+  background: #c6f6d5;
+  color: #2f855a;
+}
+
+.health-status.starting {
+  background: #fef5e7;
+  color: #d69e2e;
+}
+
+.health-status.error,
+.health-status.failed {
+  background: #fed7d7;
+  color: #c53030;
+}
+
+.health-status.timeout {
+  background: #fbb6ce;
+  color: #b83280;
+}
+
+.uptime {
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 500;
+}
+
+.errors-section {
+  background: #fed7d7;
+  border-radius: 12px;
+  padding: 1rem;
+  margin-top: 1rem;
+  border-left: 4px solid #e53e3e;
+}
+
+.errors-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #c53030;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.errors-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.errors-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.error-item {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.error-time {
+  color: #718096;
+  font-weight: 500;
+  min-width: 80px;
+}
+
+.error-message {
+  color: #2d3748;
+  flex: 1;
+}
+
 @media (max-width: 768px) {
   .channels-grid {
     grid-template-columns: 1fr;
@@ -1375,6 +1546,21 @@ onMounted(()=>{ fetchChannels(); fetchUploadedFiles(); checkActiveStreams(); if 
   
   .control-section {
     flex-direction: column;
+  }
+  
+  .health-info {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .error-item {
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  
+  .error-time {
+    min-width: auto;
+    font-size: 0.8rem;
   }
 }
 </style>
