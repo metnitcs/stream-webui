@@ -1,0 +1,41 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+  backend:
+    build: ./backend
+    environment:
+      NODE_ENV: development
+      PORT: ${BACKEND_PORT}
+      DATABASE_URL: ${DATABASE_URL}
+      STREAM_SECRET: ${STREAM_SECRET}
+      JWT_SECRET: ${JWT_SECRET}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB}
+      DEFAULT_RTMP_URL: ${DEFAULT_RTMP_URL}
+    volumes:
+      - backend_uploads:/app/uploads
+    ports:
+      - "${BACKEND_PORT}:${BACKEND_PORT}"
+    depends_on:
+      - db
+  frontend:
+    build: ./frontend
+    environment:
+      VITE_BACKEND_URL: ${VITE_BACKEND_URL}
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+volumes:
+  db_data:
+  backend_uploads:
