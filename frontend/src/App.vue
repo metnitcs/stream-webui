@@ -56,7 +56,7 @@
         <AuthPanel v-if="!token" @authed="onAuthed"/>
         <Channels v-else-if="tab==='channels'"/>
         <Stream v-else-if="tab==='stream'"/>
-        <Scheduler v-else />
+        <ScheduleManager v-else />
       </main>
       
     </div>
@@ -116,7 +116,7 @@ import { store } from './main'
 import AuthPanel from './components/AuthPanel.vue'
 import Channels from './components/ChannelsManager.vue'
 import Stream from './components/StreamController.vue'
-import Scheduler from './components/ScheduleManager.vue'
+import ScheduleManager from './components/ScheduleManager.vue'
 
 const backend = __BACKEND__
 const tab = ref(store.token ? 'channels' : 'auth')
