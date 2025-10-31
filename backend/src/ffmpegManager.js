@@ -12,6 +12,10 @@ class FFmpegManager {
     if (this.jobs.has(activeStreamId)) throw new Error('Job already exists');
     const procs = rtmpUrls.map((url, index) => {
       const args = this.buildFFmpegArgs(inputConfig, url);
+      
+      // Debug: Log FFmpeg command
+      console.log(`FFmpeg command for channel ${index + 1}:`, 'ffmpeg', args.join(' '));
+      
       const p = spawn('ffmpeg', baseArgs ? baseArgs.concat(args) : args);
       p.stderr.on('data', d => this.handleFFmpegOutput(userId, activeStreamId, d.toString(), index));
       p.on('close', (c,s) => this.handleProcessClose(userId, activeStreamId, c, s, index));
@@ -36,6 +40,10 @@ class FFmpegManager {
     if (this.jobs.has(activeStreamId)) throw new Error('Job already exists');
     const teeTargets = rtmpUrls.map(u => `[f=flv]${u}`).join('|');
     const args = this.buildFFmpegArgs(inputConfig, null, teeTargets);
+    
+    // Debug: Log FFmpeg command
+    console.log('FFmpeg tee command:', 'ffmpeg', args.join(' '));
+    
     const proc = spawn('ffmpeg', baseArgs ? baseArgs.concat(args) : args);
     proc.stderr.on('data', d => this.handleFFmpegOutput(userId, activeStreamId, d.toString()));
     proc.on('close', (c,s)=> this.handleProcessClose(userId, activeStreamId, c, s));
@@ -70,13 +78,22 @@ class FFmpegManager {
     // Handle different input types
     if (inputConfig.type === 'multi') {
       // Multi-input: multiple video and audio files
-      const videoPlaylist = this.createMultiPlaylist(inputConfig.activeStreamId, inputConfig.videoPaths, 'video');
-      const audioPlaylist = this.createMultiPlaylist(inputConfig.activeStreamId, inputConfig.audioPaths, 'audio');
-      
-      args.push('-stream_loop', '-1', '-f', 'concat', '-safe', '0', '-i', videoPlaylist);
-      args.push('-f', 'concat', '-safe', '0', '-i', audioPlaylist);
-      args.push('-map', '0:v:0', '-map', '1:a:0');
-      args.push('-shortest'); // Stop when audio ends
+      if (inputConfig.videoPaths.length === 1 && inputConfig.audioPaths.length === 1) {
+        // Simple case: single video + single audio
+        args.push('-stream_loop', '-1', '-i', inputConfig.videoPaths[0]);
+        args.push('-i', inputConfig.audioPaths[0]);
+        args.push('-map', '0:v?', '-map', '1:a?');
+        args.push('-shortest');
+      } else {
+        // Complex case: multiple files
+        const videoPlaylist = this.createMultiPlaylist(inputConfig.activeStreamId, inputConfig.videoPaths, 'video');
+        const audioPlaylist = this.createMultiPlaylist(inputConfig.activeStreamId, inputConfig.audioPaths, 'audio');
+        
+        args.push('-stream_loop', '-1', '-f', 'concat', '-safe', '0', '-i', videoPlaylist);
+        args.push('-f', 'concat', '-safe', '0', '-i', audioPlaylist);
+        args.push('-map', '0:v?', '-map', '1:a?');
+        args.push('-shortest');
+      }
     } else if (inputConfig.type === 'playlist') {
       // Playlist: multiple video files
       const playlistPath = this.createPlaylist(inputConfig.activeStreamId, inputConfig.paths);
@@ -136,10 +153,29 @@ class FFmpegManager {
       fs.mkdirSync(tempDir, { recursive: true });
     }
     
+    // Validate all input files exist
+    const validPaths = [];
+    for (const inputPath of inputPaths) {
+      if (fs.existsSync(inputPath)) {
+        validPaths.push(inputPath);
+        console.log(`✓ ${type} file exists:`, inputPath);
+      } else {
+        console.error(`✗ ${type} file missing:`, inputPath);
+        throw new Error(`${type} file not found: ${inputPath}`);
+      }
+    }
+    
+    if (validPaths.length === 0) {
+      throw new Error(`No valid ${type} files found`);
+    }
+    
     // Create concat playlist file
-    const playlistContent = inputPaths.map(p => `file '${p.replace(/'/g, "'\\''")}'
+    const playlistContent = validPaths.map(p => `file '${p.replace(/'/g, "'\\''")}'
 `).join('');
     fs.writeFileSync(playlistPath, playlistContent);
+    
+    console.log(`Created ${type} playlist:`, playlistPath);
+    console.log('Playlist content:', playlistContent);
     
     return playlistPath;
   }

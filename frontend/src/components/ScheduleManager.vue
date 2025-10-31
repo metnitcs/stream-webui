@@ -58,7 +58,7 @@
                 Video Sources ({{ selectedVideoFiles.length }} selected)
               </label>
               <label class="multi-label">
-                <VolumeXIcon class="label-icon" />
+                <Volume2Icon class="label-icon" />
                 Audio Sources ({{ selectedAudioFiles.length }} selected)
               </label>
               <div class="multi-actions">
@@ -96,7 +96,7 @@
                       :class="['selector-btn', 'audio-btn', { active: selectedAudioFiles.includes(uploadedFile.filename) }]"
                       :title="selectedAudioFiles.includes(uploadedFile.filename) ? 'Remove from Audios' : 'Add to Audios'"
                     >
-                      <VolumeXIcon class="selector-icon" />
+                      <Volume2Icon class="selector-icon" />
                       <span v-if="selectedAudioFiles.includes(uploadedFile.filename)" class="selection-number">
                         {{ selectedAudioFiles.indexOf(uploadedFile.filename) + 1 }}
                       </span>
@@ -338,7 +338,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, Teleport } from 'vue'
-import { CalendarIcon, ClockIcon, FolderIcon, ListIcon, CheckSquareIcon, XSquareIcon, VideoIcon, TvIcon, SettingsIcon, RefreshCwIcon, ZapIcon, CalendarPlusIcon, StopCircleIcon, EditIcon, TrashIcon, XIcon, SplitIcon, VolumeXIcon } from 'lucide-vue-next'
+import { CalendarIcon, ClockIcon, FolderIcon, ListIcon, CheckSquareIcon, XSquareIcon, VideoIcon, TvIcon, SettingsIcon, RefreshCwIcon, ZapIcon, CalendarPlusIcon, StopCircleIcon, EditIcon, TrashIcon, XIcon, SplitIcon, Volume2Icon } from 'lucide-vue-next'
 import { store } from '../main'
 
 const backend = __BACKEND__
