@@ -32,6 +32,11 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Serve static files in production
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, 'public')));
+}
+
 // --- Auth helpers ---
 function auth(req,res,next){
   const hdr = req.headers.authorization || '';
@@ -535,6 +540,13 @@ const PORT = process.env.PORT || Number(process.env.BACKEND_PORT) || 3001;
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
 });
+
+// Serve frontend in production
+if (process.env.NODE_ENV === 'production') {
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+}
 
 // Initialize database tables on startup
 initializeDatabase().then(() => {
