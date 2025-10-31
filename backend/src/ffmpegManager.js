@@ -106,12 +106,12 @@ class FFmpegManager {
     // Video encoding settings
     args.push(
       '-vcodec', 'libx264', '-preset', 'veryfast',
-      '-b:v', '800k', '-maxrate', '800k', '-bufsize', '1600k',
+      '-b:v', '2400k', '-maxrate', '2500k', '-bufsize', '5000k',
       '-g', '60', '-r', '30', '-vsync', '1'
     );
     
     // Audio encoding settings
-    args.push('-acodec', 'aac', '-ar', '44100', '-b:a', '96k');
+    args.push('-acodec', 'aac', '-ar', '44100', '-b:a', '128k');
     
     // Output settings
     if (teeTargets) {
